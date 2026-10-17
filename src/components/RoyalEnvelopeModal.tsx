@@ -96,9 +96,9 @@ export const RoyalEnvelopeModal: React.FC<RoyalEnvelopeModalProps> = ({
             </button>
           </div>
 
-          <div className="mt-4 flex items-center justify-center gap-2 text-xs text-[#D4AF37]/80">
-            <Volume2 className="w-3.5 h-3.5" />
-            <span>Includes Auspicious Shehnai &amp; Flute Music</span>
+          <div className="mt-4 flex items-center justify-center gap-2 text-xs text-[#D4AF37]/90 font-medium">
+            <Volume2 className="w-3.5 h-3.5 text-[#F5D77F]" />
+            <span>Includes Auspicious Shehnai &amp; Flute (दिन शगना दा)</span>
           </div>
         </div>
       </div>

@@ -1,8 +1,12 @@
 /**
- * Royal Indian Wedding Audio Synthesizer
- * Generates auspicious Shehnai, Bansuri flute melody, and Tanpura drone harmonies
- * using the Web Audio API for 100% reliable, zero-latency playback across all browsers.
+ * Royal Indian Wedding Audio Synthesizer & Player
+ * Delivers the auspicious "Din Shagna Da" Shehnai & Flute wedding soundtrack
+ * with dual playback:
+ * 1. Custom uploaded MP3/Audio file (persisted in localStorage)
+ * 2. High-fidelity Web Audio synthesis of "Din Shagna Da" (Shehnai, Bansuri flute, Sitar, Tanpura drone)
  */
+
+const AUDIO_STORAGE_KEY = 'durgesh_wedding_custom_audio_v1';
 
 class WeddingAudioManager {
   private audioCtx: AudioContext | null = null;
@@ -10,12 +14,29 @@ class WeddingAudioManager {
   private masterGain: GainNode | null = null;
   private droneOsc1: OscillatorNode | null = null;
   private droneOsc2: OscillatorNode | null = null;
-  private melodyInterval: number | null = null;
-  private volume: number = 0.55;
+  private melodyTimeout: number | null = null;
+  private volume: number = 0.65;
+
+  // Custom Audio element for uploaded user audio
+  private customAudioEl: HTMLAudioElement | null = null;
+  private customAudioUrl: string | null = null;
+
+  constructor() {
+    try {
+      const saved = localStorage.getItem(AUDIO_STORAGE_KEY);
+      if (saved) {
+        this.customAudioUrl = saved;
+      }
+    } catch {
+      // storage fallback
+    }
+  }
 
   private initContext() {
     if (!this.audioCtx) {
-      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtxClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.audioCtx = new AudioCtxClass();
       this.masterGain = this.audioCtx.createGain();
       this.masterGain.gain.setValueAtTime(this.volume, this.audioCtx.currentTime);
@@ -33,7 +54,6 @@ class WeddingAudioManager {
       if (!this.audioCtx || !this.masterGain) return;
 
       const now = this.audioCtx.currentTime;
-      // High bell fundamental and harmonics
       const frequencies = [880, 1320, 1760, 2640];
       frequencies.forEach((freq, idx) => {
         if (!this.audioCtx || !this.masterGain) return;
@@ -57,8 +77,8 @@ class WeddingAudioManager {
     }
   }
 
-  // Auspicious Raga wedding melody sequence (Bhairavi / Yaman auspicious wedding notes: D, E, F#, G, A, B, C#)
-  private playWeddingRagaNote(freq: number, duration: number, delay: number) {
+  // Flute / Shehnai Note with smooth breath attack, vibrato, and meend
+  private playShehnaiFluteNote(freq: number, duration: number, delay: number, instrument: 'flute' | 'shehnai' = 'shehnai') {
     if (!this.audioCtx || !this.masterGain || !this.isPlayingState) return;
 
     const startTime = this.audioCtx.currentTime + delay;
@@ -67,31 +87,36 @@ class WeddingAudioManager {
     const noteGain = this.audioCtx.createGain();
     const filter = this.audioCtx.createBiquadFilter();
 
-    // Warm shehnai/bansuri timbre with harmonics & subtle vibrato
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(freq, startTime);
+    if (instrument === 'flute') {
+      osc.type = 'sine';
+      oscHarmonic.type = 'triangle';
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(freq * 3.5, startTime);
+    } else {
+      // Shehnai: rich reedy harmonics
+      osc.type = 'sawtooth';
+      oscHarmonic.type = 'sine';
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(freq * 2.2, startTime);
+      filter.Q.setValueAtTime(3.0, startTime);
+    }
 
-    // Subtle pitch vibrato (meend / gamak characteristic of shehnai)
+    osc.frequency.setValueAtTime(freq, startTime);
+    oscHarmonic.frequency.setValueAtTime(freq * 2, startTime);
+
+    // Expressive Gamak/Meend vibrato
     const vibrato = this.audioCtx.createOscillator();
     const vibratoGain = this.audioCtx.createGain();
-    vibrato.frequency.setValueAtTime(5.5, startTime); // 5.5 Hz vibrato
-    vibratoGain.gain.setValueAtTime(freq * 0.015, startTime); // slight bend
+    vibrato.frequency.setValueAtTime(5.8, startTime);
+    vibratoGain.gain.setValueAtTime(freq * 0.018, startTime);
     vibrato.connect(osc.frequency);
     vibrato.start(startTime);
     vibrato.stop(startTime + duration);
 
-    oscHarmonic.type = 'sine';
-    oscHarmonic.frequency.setValueAtTime(freq * 2, startTime);
-
-    // Bandpass filter to shape the warm reedy shehnai tone
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(freq * 2.2, startTime);
-    filter.Q.setValueAtTime(2.5, startTime);
-
-    // Attack, Decay, Sustain, Release (soft breath entrance like shehnai)
+    // Envelope
     noteGain.gain.setValueAtTime(0.001, startTime);
-    noteGain.gain.exponentialRampToValueAtTime(0.12 * this.volume, startTime + 0.12);
-    noteGain.gain.setValueAtTime(0.1 * this.volume, startTime + duration - 0.2);
+    noteGain.gain.exponentialRampToValueAtTime(0.14 * this.volume, startTime + 0.14);
+    noteGain.gain.setValueAtTime(0.12 * this.volume, startTime + duration - 0.15);
     noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
     osc.connect(filter);
@@ -105,89 +130,196 @@ class WeddingAudioManager {
     oscHarmonic.stop(startTime + duration);
   }
 
+  // Sitar/Harp gentle pluck for acoustic backdrop
+  private playPluck(freq: number, delay: number) {
+    if (!this.audioCtx || !this.masterGain || !this.isPlayingState) return;
+
+    const startTime = this.audioCtx.currentTime + delay;
+    const osc = this.audioCtx.createOscillator();
+    const gain = this.audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, startTime);
+
+    gain.gain.setValueAtTime(0.06 * this.volume, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.2);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(startTime);
+    osc.stop(startTime + 1.3);
+  }
+
+  public setCustomAudio(urlOrDataUrl: string) {
+    this.customAudioUrl = urlOrDataUrl;
+    try {
+      localStorage.setItem(AUDIO_STORAGE_KEY, urlOrDataUrl);
+    } catch {
+      // storage
+    }
+    if (this.isPlayingState) {
+      this.stopMusic();
+      this.startMusic();
+    }
+  }
+
+  public getCustomAudio(): string | null {
+    return this.customAudioUrl;
+  }
+
+  public resetCustomAudio() {
+    this.customAudioUrl = null;
+    try {
+      localStorage.removeItem(AUDIO_STORAGE_KEY);
+    } catch {
+      // storage
+    }
+    if (this.isPlayingState) {
+      this.stopMusic();
+      this.startMusic();
+    }
+  }
+
   public startMusic(): boolean {
+    if (this.isPlayingState) return true;
+    this.isPlayingState = true;
+
+    // 1. If custom audio track exists, play via HTMLAudioElement
+    if (this.customAudioUrl) {
+      try {
+        if (!this.customAudioEl) {
+          this.customAudioEl = new Audio(this.customAudioUrl);
+          this.customAudioEl.loop = true;
+        } else {
+          this.customAudioEl.src = this.customAudioUrl;
+        }
+        this.customAudioEl.volume = this.volume;
+        this.customAudioEl.play().catch((err) => {
+          console.warn('Custom audio playback notice:', err);
+          this.playSynthesizedDinShagnaDa();
+        });
+        return true;
+      } catch (e) {
+        console.warn('Fallback to synthesized music:', e);
+      }
+    }
+
+    // 2. Play synthesized "Din Shagna Da" Auspicious Wedding Shehnai & Flute
+    return this.playSynthesizedDinShagnaDa();
+  }
+
+  private playSynthesizedDinShagnaDa(): boolean {
     try {
       this.initContext();
       if (!this.audioCtx || !this.masterGain) return false;
 
-      if (this.isPlayingState) return true;
-      this.isPlayingState = true;
-
       const now = this.audioCtx.currentTime;
 
-      // 1. Tanpura Drone (Sa - Pa - Sa' fundamental harmony: D3 = 146.83Hz, A3 = 220Hz)
+      // Tanpura Drone in Key of E (E3 = 164.81Hz, B3 = 246.94Hz)
       const droneGain = this.audioCtx.createGain();
-      droneGain.gain.setValueAtTime(0.06 * this.volume, now);
+      droneGain.gain.setValueAtTime(0.07 * this.volume, now);
       droneGain.connect(this.masterGain);
 
       this.droneOsc1 = this.audioCtx.createOscillator();
       this.droneOsc1.type = 'triangle';
-      this.droneOsc1.frequency.setValueAtTime(146.83, now); // D3 (Sa)
+      this.droneOsc1.frequency.setValueAtTime(164.81, now);
       this.droneOsc1.connect(droneGain);
       this.droneOsc1.start(now);
 
       this.droneOsc2 = this.audioCtx.createOscillator();
       this.droneOsc2.type = 'sine';
-      this.droneOsc2.frequency.setValueAtTime(220.0, now); // A3 (Pa)
+      this.droneOsc2.frequency.setValueAtTime(246.94, now);
       this.droneOsc2.connect(droneGain);
       this.droneOsc2.start(now);
 
-      // 2. Auspicious melodic phrases (Raga Yaman / auspicious wedding motif)
-      // Notes: D4 (293.66), E4 (329.63), F#4 (369.99), G4 (392.00), A4 (440.00), B4 (493.88), C#5 (554.37), D5 (587.33)
-      const melodySequence = [
-        { freq: 293.66, dur: 1.2 }, // D4 (Sa)
-        { freq: 369.99, dur: 0.9 }, // F#4 (Ga)
-        { freq: 440.00, dur: 1.5 }, // A4 (Pa)
-        { freq: 493.88, dur: 0.8 }, // B4 (Dha)
-        { freq: 440.00, dur: 1.2 }, // A4 (Pa)
-        { freq: 392.00, dur: 0.7 }, // G4 (Ma)
-        { freq: 369.99, dur: 1.4 }, // F#4 (Ga)
-        { freq: 329.63, dur: 0.9 }, // E4 (Re)
-        { freq: 293.66, dur: 2.2 }, // D4 (Sa)
-        // Upper flourish
-        { freq: 369.99, dur: 0.8 }, // F#4
-        { freq: 440.00, dur: 0.8 }, // A4
-        { freq: 554.37, dur: 1.2 }, // C#5 (Ni)
-        { freq: 587.33, dur: 2.0 }, // D5 (Sa')
-        { freq: 554.37, dur: 0.8 }, // C#5
-        { freq: 493.88, dur: 0.8 }, // B4
-        { freq: 440.00, dur: 1.8 }, // A4
-        { freq: 369.99, dur: 1.0 }, // F#4
-        { freq: 329.63, dur: 1.2 }, // E4
-        { freq: 293.66, dur: 2.5 }, // D4
-      ];
+      // "Din Shagna Da" Melody Notes in Key of E:
+      // E4=329.63, F#4=369.99, G#4=415.30, A4=440.00, B4=493.88, C#5=554.37, D#5=622.25, E5=659.25
+      const E4 = 329.63;
+      const Fs4 = 369.99;
+      const Gs4 = 415.30;
+      const A4 = 440.00;
+      const B4 = 493.88;
+      const Cs5 = 554.37;
+      const Ds5 = 622.25;
+      const E5 = 659.25;
 
-      const playPhrase = () => {
+      const loopSequence = () => {
         if (!this.isPlayingState) return;
-        let cumulativeDelay = 0.2;
-        melodySequence.forEach((step) => {
-          this.playWeddingRagaNote(step.freq, step.dur, cumulativeDelay);
-          cumulativeDelay += step.dur + 0.15;
-        });
+
+        // Intro Plucks (Sitar/Harp)
+        this.playPluck(E4, 0.2);
+        this.playPluck(Gs4, 0.6);
+        this.playPluck(B4, 1.0);
+        this.playPluck(E5, 1.4);
+
+        // Phrase 1: "Din shagna da chadheya..." (Soft Bansuri Flute)
+        let t = 2.0;
+        this.playShehnaiFluteNote(E4, 1.0, t, 'flute'); t += 1.0;
+        this.playShehnaiFluteNote(Gs4, 0.8, t, 'flute'); t += 0.8;
+        this.playShehnaiFluteNote(A4, 0.6, t, 'flute'); t += 0.6;
+        this.playShehnaiFluteNote(Gs4, 1.2, t, 'flute'); t += 1.2;
+        this.playShehnaiFluteNote(Fs4, 0.8, t, 'flute'); t += 0.8;
+        this.playShehnaiFluteNote(E4, 1.8, t, 'flute'); t += 1.8;
+
+        // Phrase 2: "Aao sakhiyo ni vehre sajeya..."
+        this.playShehnaiFluteNote(Gs4, 0.7, t, 'flute'); t += 0.7;
+        this.playShehnaiFluteNote(B4, 0.9, t, 'flute'); t += 0.9;
+        this.playShehnaiFluteNote(Cs5, 1.2, t, 'flute'); t += 1.2;
+        this.playShehnaiFluteNote(B4, 0.8, t, 'flute'); t += 0.8;
+        this.playShehnaiFluteNote(A4, 0.8, t, 'flute'); t += 0.8;
+        this.playShehnaiFluteNote(Gs4, 1.2, t, 'flute'); t += 1.2;
+        this.playShehnaiFluteNote(Fs4, 1.0, t, 'flute'); t += 1.0;
+        this.playShehnaiFluteNote(E4, 2.2, t, 'flute'); t += 2.2;
+
+        // Phrase 3: "Mera sajna mileya..." (Glorious Shehnai Swell)
+        this.playShehnaiFluteNote(Gs4, 0.8, t, 'shehnai'); t += 0.8;
+        this.playShehnaiFluteNote(B4, 0.8, t, 'shehnai'); t += 0.8;
+        this.playShehnaiFluteNote(Cs5, 1.0, t, 'shehnai'); t += 1.0;
+        this.playShehnaiFluteNote(Ds5, 1.0, t, 'shehnai'); t += 1.0;
+        this.playShehnaiFluteNote(E5, 2.0, t, 'shehnai'); t += 2.0;
+        this.playShehnaiFluteNote(Ds5, 0.8, t, 'shehnai'); t += 0.8;
+        this.playShehnaiFluteNote(Cs5, 1.0, t, 'shehnai'); t += 1.0;
+        this.playShehnaiFluteNote(B4, 1.8, t, 'shehnai'); t += 1.8;
+
+        // Phrase 4: "Sajna mileya... shagna da geet..."
+        this.playShehnaiFluteNote(Cs5, 0.8, t, 'shehnai'); t += 0.8;
+        this.playShehnaiFluteNote(B4, 0.8, t, 'shehnai'); t += 0.8;
+        this.playShehnaiFluteNote(A4, 0.8, t, 'shehnai'); t += 0.8;
+        this.playShehnaiFluteNote(Gs4, 1.2, t, 'shehnai'); t += 1.2;
+        this.playShehnaiFluteNote(Fs4, 1.2, t, 'shehnai'); t += 1.2;
+        this.playShehnaiFluteNote(E4, 2.8, t, 'shehnai'); t += 2.8;
+
+        // Schedule next loop iteration (~28 seconds per cycle)
+        if (this.isPlayingState) {
+          this.melodyTimeout = window.setTimeout(loopSequence, (t + 0.5) * 1000);
+        }
       };
 
-      // Play initial phrase and schedule looping
-      playPhrase();
-      const totalPhraseTimeMs = melodySequence.reduce((acc, s) => acc + (s.dur + 0.15) * 1000, 500);
-      this.melodyInterval = window.setInterval(() => {
-        if (this.isPlayingState) {
-          playPhrase();
-        }
-      }, totalPhraseTimeMs);
-
+      loopSequence();
       return true;
     } catch (e) {
-      console.warn('Could not start wedding music:', e);
+      console.warn('Synthesized music notice:', e);
       return false;
     }
   }
 
   public stopMusic() {
     this.isPlayingState = false;
-    if (this.melodyInterval) {
-      clearInterval(this.melodyInterval);
-      this.melodyInterval = null;
+
+    if (this.customAudioEl) {
+      try {
+        this.customAudioEl.pause();
+        this.customAudioEl.currentTime = 0;
+      } catch {
+        // ignore
+      }
     }
+
+    if (this.melodyTimeout) {
+      clearTimeout(this.melodyTimeout);
+      this.melodyTimeout = null;
+    }
+
     if (this.droneOsc1) {
       try {
         this.droneOsc1.stop();
@@ -197,6 +329,7 @@ class WeddingAudioManager {
       }
       this.droneOsc1 = null;
     }
+
     if (this.droneOsc2) {
       try {
         this.droneOsc2.stop();
@@ -223,6 +356,9 @@ class WeddingAudioManager {
 
   public setVolume(val: number) {
     this.volume = Math.max(0, Math.min(1, val));
+    if (this.customAudioEl) {
+      this.customAudioEl.volume = this.volume;
+    }
     if (this.masterGain && this.audioCtx) {
       this.masterGain.gain.setValueAtTime(this.volume, this.audioCtx.currentTime);
     }

@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "GalleryPhoto": {
+      "title": "GalleryPhoto",
+      "description": "A wedding or pre-wedding photograph in the royal gallery",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 150 },
+        "category": { "type": "string", "maxLength": 50 },
+        "imageUrl": { "type": "string", "maxLength": 1000000 },
+        "description": { "type": "string", "maxLength": 500 },
+        "dateAdded": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["title", "category", "imageUrl"]
+    },
+    "Blessing": {
+      "title": "Blessing",
+      "description": "A guest blessing or congratulatory wish for the couple",
+      "type": "object",
+      "properties": {
+        "sender": { "type": "string", "maxLength": 100 },
+        "relation": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "timestamp": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["sender", "message"]
+    }
+  },
+  "firestore": {
+    "/galleryPhotos/{photoId}": {
+      "schema": "GalleryPhoto",
+      "description": "Collection of wedding and pre-wedding photos displayed in the gallery"
+    },
+    "/blessings/{blessingId}": {
+      "schema": "Blessing",
+      "description": "Collection of guest congratulations and blessings for Durgesh & Bhumika"
+    }
+  }
+}

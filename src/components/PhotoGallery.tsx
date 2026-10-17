@@ -1,26 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { INITIAL_GALLERY_IMAGES } from '../data/weddingData';
 import { GalleryImage } from '../types/wedding';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, X, ZoomIn, Lock, Image as ImageIcon, Upload, Sparkles } from 'lucide-react';
-
-const GALLERY_STORAGE_KEY = 'durgesh_wedding_photo_gallery_v1';
+import {
+  subscribeToGallery,
+  saveGalleryPhoto,
+  removeGalleryPhoto,
+} from '../services/weddingDb';
+import { Plus, Trash2, X, ZoomIn, Lock, Image as ImageIcon, Upload, Sparkles, AlertTriangle, Check } from 'lucide-react';
 
 export const PhotoGallery: React.FC = () => {
   const { isAdmin, openAuthModal } = useAuth();
-  const [images, setImages] = useState<GalleryImage[]>(() => {
-    try {
-      const stored = localStorage.getItem(GALLERY_STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch {
-      // fallback
-    }
-    return INITIAL_GALLERY_IMAGES;
-  });
-
+  const [images, setImages] = useState<GalleryImage[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [lightboxImage, setLightboxImage] = useState<GalleryImage | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // In-app delete confirmation state
+  const [photoToDelete, setPhotoToDelete] = useState<GalleryImage | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // New photo form state
   const [newTitle, setNewTitle] = useState('');
@@ -30,13 +28,13 @@ export const PhotoGallery: React.FC = () => {
   const [previewDataUrl, setPreviewDataUrl] = useState<string>('');
   const [uploadError, setUploadError] = useState('');
 
+  // Real-time Cloud Firestore synchronization across all users & devices
   useEffect(() => {
-    try {
-      localStorage.setItem(GALLERY_STORAGE_KEY, JSON.stringify(images));
-    } catch (e) {
-      console.warn('Storage quota issue:', e);
-    }
-  }, [images]);
+    const unsubscribe = subscribeToGallery((livePhotos) => {
+      setImages(livePhotos);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const categories = ['All', 'Pre-Wedding', 'Haldi', 'Mandap', 'Bindoli', 'Vivah', 'Reception'];
 
@@ -45,7 +43,12 @@ export const PhotoGallery: React.FC = () => {
     return img.category === activeCategory;
   });
 
-  // Handle local file selection
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Handle local file selection with client-side image compression
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -58,13 +61,29 @@ export const PhotoGallery: React.FC = () => {
     setUploadError('');
     const reader = new FileReader();
     reader.onload = (event) => {
-      const result = event.target?.result as string;
-      setPreviewDataUrl(result);
+      const img = new Image();
+      img.onload = () => {
+        // Compress image so it uploads cleanly and fast to Firestore
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200;
+        const scaleSize = Math.min(1, MAX_WIDTH / img.width);
+        canvas.width = img.width * scaleSize;
+        canvas.height = img.height * scaleSize;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+          setPreviewDataUrl(compressedDataUrl);
+        } else {
+          setPreviewDataUrl(event.target?.result as string);
+        }
+      };
+      img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
   };
 
-  const handleAddPhotoSubmit = (e: React.FormEvent) => {
+  const handleAddPhotoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalUrl = previewDataUrl || imageUrlInput.trim();
 
@@ -73,6 +92,7 @@ export const PhotoGallery: React.FC = () => {
       return;
     }
 
+    setIsSubmitting(true);
     const newPhoto: GalleryImage = {
       id: 'img-' + Date.now(),
       title: newTitle.trim() || `${newCategory} Moment`,
@@ -82,27 +102,58 @@ export const PhotoGallery: React.FC = () => {
       description: newDescription.trim() || undefined,
     };
 
-    setImages([newPhoto, ...images]);
-    setIsAddModalOpen(false);
-    setNewTitle('');
-    setNewDescription('');
-    setImageUrlInput('');
-    setPreviewDataUrl('');
-    setUploadError('');
+    try {
+      await saveGalleryPhoto(newPhoto);
+      setIsAddModalOpen(false);
+      setNewTitle('');
+      setNewDescription('');
+      setImageUrlInput('');
+      setPreviewDataUrl('');
+      setUploadError('');
+      showToast('Photo added live! Visible to all users.');
+    } catch (err) {
+      console.error('Photo save error:', err);
+      setUploadError('Failed to save photo to cloud. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDeletePhoto = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this photo from the gallery?')) {
-      setImages(images.filter((img) => img.id !== id));
-      if (lightboxImage?.id === id) {
+  const triggerDelete = (img: GalleryImage, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!isAdmin) {
+      openAuthModal();
+      return;
+    }
+    setPhotoToDelete(img);
+  };
+
+  const confirmDeletePhoto = async () => {
+    if (!photoToDelete) return;
+    const targetId = photoToDelete.id;
+    try {
+      await removeGalleryPhoto(targetId);
+      if (lightboxImage?.id === targetId) {
         setLightboxImage(null);
       }
+      setPhotoToDelete(null);
+      showToast('Photo deleted! Removed for all users.');
+    } catch (err) {
+      console.error('Delete photo error:', err);
+      showToast('Failed to delete photo from cloud.');
     }
   };
 
   return (
     <section id="gallery" className="py-16 sm:py-24 px-4 bg-[#FAF5EB] relative border-b border-[#D4AF37]/30">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-20 right-4 z-50 p-3.5 rounded-xl bg-[#240409] text-[#FFF2B2] border border-[#D4AF37] shadow-2xl flex items-center gap-2 text-xs font-semibold animate-bounce">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-10 sm:mb-12">
@@ -140,10 +191,10 @@ export const PhotoGallery: React.FC = () => {
             ) : (
               <button
                 onClick={openAuthModal}
-                className="inline-flex items-center gap-1.5 text-xs text-[#8C6208] hover:text-[#3B0710] py-1 px-3 rounded-lg border border-[#D4AF37]/40 hover:bg-[#FFFDF9] transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-[#8C6208] hover:text-[#3B0710] py-1.5 px-3.5 rounded-lg border border-[#D4AF37]/50 bg-[#FFFDF9] hover:bg-[#FFF8ED] transition-colors shadow-sm cursor-pointer"
               >
-                <Lock className="w-3 h-3 text-[#B8860B]" />
-                <span>Host Login to Manage Gallery</span>
+                <Lock className="w-3.5 h-3.5 text-[#B8860B]" />
+                <span>Host Login to Manage &amp; Delete Photos</span>
               </button>
             )}
           </div>
@@ -182,7 +233,7 @@ export const PhotoGallery: React.FC = () => {
                   setNewCategory(activeCategory as GalleryImage['category']);
                   setIsAddModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#801323] text-[#FFF2B2] text-xs font-semibold"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#801323] text-[#FFF2B2] text-xs font-semibold cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Upload First Photo in {activeCategory}</span>
@@ -217,14 +268,15 @@ export const PhotoGallery: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Host Delete Button */}
+                  {/* Host Delete Button - Prominent & Reliable */}
                   {isAdmin && (
                     <button
-                      onClick={(e) => handleDeletePhoto(img.id, e)}
+                      onClick={(e) => triggerDelete(img, e)}
                       title="Delete Photo (Host only)"
-                      className="absolute top-3 right-3 p-2 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg transition-transform hover:scale-110 z-10"
+                      className="absolute top-3 right-3 p-2 rounded-xl bg-red-600 hover:bg-red-700 text-white shadow-xl transition-all hover:scale-110 active:scale-95 z-20 flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete</span>
                     </button>
                   )}
                 </div>
@@ -264,7 +316,7 @@ export const PhotoGallery: React.FC = () => {
             {/* Close */}
             <button
               onClick={() => setLightboxImage(null)}
-              className="absolute top-3 right-3 p-2 rounded-full bg-black/60 text-[#FAF5EB] hover:text-[#D4AF37] transition-colors z-20"
+              className="absolute top-3 right-3 p-2 rounded-full bg-black/60 text-[#FAF5EB] hover:text-[#D4AF37] transition-colors z-20 cursor-pointer"
               aria-label="Close image viewer"
             >
               <X className="w-6 h-6" />
@@ -298,13 +350,68 @@ export const PhotoGallery: React.FC = () => {
 
               {isAdmin && (
                 <button
-                  onClick={(e) => handleDeletePhoto(lightboxImage.id, e)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shrink-0"
+                  onClick={() => triggerDelete(lightboxImage)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shrink-0 cursor-pointer transition-colors shadow-md"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-4 h-4" />
                   <span>Delete Photo</span>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* In-App Delete Confirmation Modal */}
+      {photoToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl bg-[#FFFDF9] p-6 border-2 border-red-500/50 shadow-2xl text-[#2C1810]">
+            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-red-200">
+              <div className="p-2.5 rounded-full bg-red-100 text-red-600 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-royal text-lg font-bold text-red-900">
+                  Delete Photo Confirmation
+                </h3>
+                <p className="text-xs text-[#8C6208]">
+                  Host Action · Durgesh Sharma
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#5C2E0A] mb-4 leading-relaxed">
+              Are you sure you want to permanently delete{' '}
+              <strong className="text-red-900">&ldquo;{photoToDelete.title}&rdquo;</strong>? This photo will be removed for everyone across all devices.
+            </p>
+
+            {photoToDelete.imageUrl && (
+              <div className="mb-4 h-28 rounded-xl overflow-hidden bg-neutral-100 border border-[#D4AF37]/30">
+                <img
+                  src={photoToDelete.imageUrl}
+                  alt="To delete"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPhotoToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 font-semibold text-xs hover:bg-neutral-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeletePhoto}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Yes, Delete for Everyone</span>
+              </button>
             </div>
           </div>
         </div>
@@ -316,7 +423,7 @@ export const PhotoGallery: React.FC = () => {
           <div className="relative w-full max-w-lg rounded-2xl bg-gradient-to-b from-[#FFFDF9] to-[#FAF5EB] p-6 sm:p-8 border border-[#D4AF37] shadow-2xl text-[#2C1810]">
             <button
               onClick={() => setIsAddModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-full text-[#8C6208] hover:bg-[#F3E5AB]/40 transition-colors"
+              className="absolute top-4 right-4 p-1.5 rounded-full text-[#8C6208] hover:bg-[#F3E5AB]/40 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -328,7 +435,7 @@ export const PhotoGallery: React.FC = () => {
                   Add Wedding / Pre-Wedding Photo
                 </h3>
                 <p className="text-xs text-[#8C6208]">
-                  Host Portal · Durgesh Sharma
+                  Cloud Sync Active · Visible to All Visitors Worldwide
                 </p>
               </div>
             </div>
@@ -340,7 +447,6 @@ export const PhotoGallery: React.FC = () => {
             )}
 
             <form onSubmit={handleAddPhotoSubmit} className="space-y-4 text-xs">
-              {/* File upload or URL */}
               <div>
                 <label className="block text-[#5C2E0A] font-semibold mb-1">
                   Upload Photo from Phone / Computer
@@ -384,7 +490,7 @@ export const PhotoGallery: React.FC = () => {
                     />
                   </div>
                   <span className="text-[11px] text-[#8C6208] font-medium truncate">
-                    Ready to publish to gallery
+                    Ready to publish to cloud gallery
                   </span>
                 </div>
               )}
@@ -440,16 +546,22 @@ export const PhotoGallery: React.FC = () => {
               <div className="pt-2 flex gap-2">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setIsAddModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 font-medium hover:bg-neutral-50 transition-colors"
+                  className="flex-1 py-2.5 rounded-xl border border-neutral-300 text-neutral-700 font-medium hover:bg-neutral-50 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#801323] to-[#5A0C17] text-[#FFF2B2] font-bold shadow-md hover:shadow-lg transition-all cursor-pointer"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#801323] to-[#5A0C17] text-[#FFF2B2] font-bold shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  Publish to Gallery
+                  {isSubmitting ? (
+                    <span>Uploading...</span>
+                  ) : (
+                    <span>Publish for All Users</span>
+                  )}
                 </button>
               </div>
             </form>
