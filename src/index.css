@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-cinzel-dec: 'Cinzel Decorative', serif;
+    --font-cinzel: 'Cinzel', serif;
+    --font-playfair: 'Playfair Display', serif;
+    --font-hindi: 'Rozha One', 'Yatra One', serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+}
+
+.font-royal {
+  font-family: 'Cinzel Decorative', 'Cinzel', serif;
+}
+
+.font-serif-royal {
+  font-family: 'Cinzel', 'Playfair Display', serif;
+}
+
+.font-hindi {
+  font-family: 'Rozha One', 'Yatra One', serif;
+}
+
+.gold-gradient-text {
+  background: linear-gradient(135deg, #D4AF37 0%, #FFF2B2 40%, #B8860B 75%, #F5D77F 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gold-gradient-bg {
+  background: linear-gradient(135deg, #B8860B 0%, #D4AF37 50%, #8C6208 100%);
+}
+
+.crimson-royal-bg {
+  background: linear-gradient(180deg, #680E1B 0%, #4E0A14 100%);
+}
+
+.maroon-card-bg {
+  background: linear-gradient(145deg, #5A0C17 0%, #420810 100%);
+}
+
+.parchment-bg {
+  background-color: #FAF5EB;
+  background-image: radial-gradient(#E8DCB8 0.75px, transparent 0.75px);
+  background-size: 24px 24px;
+}
+
+@keyframes float-petal {
+  0% {
+    transform: translateY(-30px) rotate(0deg) translateX(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  90% {
+    opacity: 0.75;
+  }
+  100% {
+    transform: translateY(105vh) rotate(360deg) translateX(45px);
+    opacity: 0;
+  }
+}
+
+.animate-petal {
+  animation: float-petal linear infinite;
+}
+
+@keyframes flame-flicker {
+  0%, 100% {
+    transform: scale(1) rotate(-1.5deg);
+    opacity: 0.92;
+  }
+  50% {
+    transform: scale(1.1, 1.18) rotate(1.5deg);
+    opacity: 1;
+  }
+}
+
+.animate-flicker {
+  animation: flame-flicker 1.8s ease-in-out infinite;
+}
+
+@keyframes gentle-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+}
+
+.animate-gentle-pulse {
+  animation: gentle-pulse 3s ease-in-out infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #2A050B;
+}
+::-webkit-scrollbar-thumb {
+  background: #B8860B;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #D4AF37;
+}

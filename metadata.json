@@ -1,0 +1,6 @@
+{
+  "name": "Durgesh & Bhumika - Royal Wedding Invitation",
+  "description": "Royal Rajasthani wedding invitation for Durgesh Sharma and Bhumika Dave in Udaipur, featuring ceremonial itineraries, Google Maps directions, auspicious music, and countdown.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
